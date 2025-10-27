@@ -1,0 +1,1363 @@
+{
+  "name": "Exporta Conversa - Markedesk (Eliana)",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// --- Código para n8n (Function/Code Node) ---\n// OBS: configure este nó em \"Run Once\" para processar todos os items juntos\n\n// pega dados dos outros nós\nconst ticketId = $('Localiza TicketId por contato 2').item.json.id || '';\nconst contato = $('Consulta contato 2').item.json || { name: '', number: '' };\n\n// função para escapar HTML\nfunction escapeHtml(s = '') {\n  return String(s)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;');\n}\n\n// variável para controlar o último dia\nlet lastDay = null;\n\n// monta HTML das mensagens\nconst mensagensHtml = items.map(it => {\n  const body = it.json.body || it.json.text || '';\n  const createdAt = it.json.createdAt || '';\n  const fromMe = !!it.json.fromMe;\n\n  // formata data DD/MM/YYYY HH:MM\n  const d = createdAt ? new Date(createdAt) : null;\n  let dataFormatada = createdAt;\n  let separatorHtml = '';\n  if (d && !isNaN(d)) {\n    d.setHours(d.getHours() - 3); // ajustar fuso horário\n    const ano = d.getFullYear();\n    const mes = String(d.getMonth() + 1).padStart(2, '0');\n    const dia = String(d.getDate()).padStart(2, '0');\n    const hora = String(d.getHours()).padStart(2, '0');\n    const min = String(d.getMinutes()).padStart(2, '0');\n    dataFormatada = `${dia}/${mes}/${ano} ${hora}:${min}`;\n\n    // separador de dia\n    const currentDay = `${dia}/${mes}/${ano}`;\n    if (currentDay !== lastDay) {\n      separatorHtml = `<div class=\"day-separator\">${currentDay}</div>`;\n      lastDay = currentDay;\n    }\n  }\n\n  // limpa marcadores como \"*Nome :*\"\n  let texto = body.trim().replace(/\\*([^*]+)\\*\\s*:?\\s*/g,'$1 ').trim();\n\n  // detecta referência a arquivo de imagem\n  const isImage = /^\\s*[\\w\\-]+\\.(jpe?g|png|gif|webp)\\s*$/i.test(texto.split('\\n')[0]);\n\n  const tipo = fromMe ? 'sent' : 'recv';\n  const contentHtml = isImage\n    ? `<img src=\"${escapeHtml(texto.trim())}\" alt=\"imagem\" style=\"max-width:240px;border-radius:8px;\">`\n    : `<div>${escapeHtml(texto).replace(/\\n/g, '<br>')}</div>`;\n\n  // se mensagem recebida, extrai nome do remetente\n  let nameHtml = '';\n  if (!fromMe) {\n    const m = texto.match(/^([^:]{1,50})(?: \\((\\+?\\d+)\\))?:/);\n    if (m) {\n      nameHtml = `<div class=\"name\">${escapeHtml(m[1].replace(/\\*/g,''))}${m[2] ? ' ('+escapeHtml(m[2])+')' : ''}</div>`;\n    }\n  }\n\n  return `\n    ${separatorHtml}\n    <div class=\"bubble ${tipo}\">\n      ${nameHtml}\n      ${contentHtml}\n      <div class=\"meta\">${escapeHtml(dataFormatada)} • ${fromMe ? 'enviada' : 'recebida'}</div>\n    </div>\n  `;\n}).join('\\n');\n\n// template HTML completo\nconst html = `<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Conversa - ${escapeHtml(contato.name || 'contato')}</title>\n<style>\n  :root{--bg:#ece5dd;--bubble-sent:#DCF8C6;--bubble-recv:#fff;--text:#222}\n  body{font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);margin:0;padding:24px;color:var(--text)}\n  .app{max-width:760px;margin:0 auto;background:#f7f7f7;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.08);overflow:hidden}\n  header{padding:14px 16px;background:#fff;display:flex;align-items:center;border-bottom:1px solid #eee}\n  .profile{width:44px;height:44px;border-radius:50%;background:#ddd;margin-right:12px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#666}\n  .title{font-weight:600}\n  .subtitle{font-size:12px;color:#666}\n  .chat{padding:18px;background:linear-gradient(180deg,#efefef00,#efefef00);min-height:480px}\n  .bubble{max-width:68%;padding:10px 12px;border-radius:10px;margin:8px 0;position:relative;line-height:1.3;word-wrap:break-word}\n  .bubble.sent{margin-left:auto;background:var(--bubble-sent);border-bottom-right-radius:2px}\n  .bubble.recv{margin-right:auto;background:var(--bubble-recv);border-bottom-left-radius:2px}\n  .meta{font-size:11px;color:#666;margin-top:6px}\n  .name{font-weight:700;margin-bottom:6px}\n  img{display:block;margin-top:6px;max-width:100%}\n  .day-separator { text-align: center; margin: 16px 0; font-size: 12px; color: #666; font-weight: 600; }\n  .footer{padding:12px;border-top:1px solid #eee;background:#fff;text-align:center;font-size:12px;color:#666}\n</style>\n</head>\n<body>\n  <div class=\"app\">\n    <header>\n      <div class=\"profile\">${escapeHtml((contato.name||'')[0]||'C')}</div>\n      <div>\n        <div class=\"title\">${escapeHtml(contato.name || 'Contatos')}</div>\n        <div class=\"subtitle\">${escapeHtml(contato.number || '')}</div>\n      </div>\n    </header>\n    <div class=\"chat\">\n      ${mensagensHtml}\n    </div>\n  </div>\n</body>\n</html>`;\n\n// converte HTML para base64 para envio como binário\nconst b64 = Buffer.from(html).toString('base64');\n\nreturn [\n  {\n    json: {\n      success: true,\n      fileName: `conversa_${(contato.name||'contato').replace(/\\s+/g,'_')}.html`,\n      htmlContent: html // <--- propriedade necessária para PDF\n    },\n    binary: {\n      data: {\n        data: b64,\n        fileName: `conversa_${(contato.name||'contato').replace(/\\s+/g,'_')}.html`,\n        mimeType: 'text/html'\n      }\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        112
+      ],
+      "id": "3c995fee-6e7f-4136-acf1-7590fbe45cf5",
+      "name": "Monta conversa em HTML",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "share",
+        "fileId": {
+          "__rl": true,
+          "value": "={{$node[\"Salva no Google Drive\"].json.id}}",
+          "mode": "id"
+        },
+        "permissionsUi": {
+          "permissionsValues": {
+            "role": "reader",
+            "type": "anyone"
+          }
+        },
+        "options": {}
+      },
+      "name": "Compartilhar arquivo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        112
+      ],
+      "id": "3f0ba1b3-14c4-4415-8421-f4f4b0293348",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "x8Usr3xPNd2qlwmI",
+          "name": "Google Drive - Eliana (Servertec)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  {\n    json: {\n      downloadUrl: \"https://drive.google.com/uc?export=download&id=\" + $node[\"Salva no Google Drive\"].json.id\n    }\n  }\n];\n"
+      },
+      "name": "Retornar URL Pública",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        112
+      ],
+      "id": "dab0a2e4-92f3-4b1a-9ccb-96b8493af34f"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"downloadUrl\": \"{{ $json.downloadUrl }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1536,
+        112
+      ],
+      "id": "70ac7adc-2c50-42d3-822a-7a182c826f16",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "81fa801d-84b5-4dd2-8d08-3ee0b8b526ac"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "97e25690-68ef-4e1e-95fd-44820aafb61d",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "3",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "3"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "f3fd0620-e266-4814-b6bf-d566fba8ad89",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "4",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "4"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "3c94c8c7-b60b-4773-a883-bdfe2b39aa63",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "5",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "5"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "17b6d8d4-a79d-4675-9213-a9baa562b452",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "6",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "6"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "32eff122-efaf-4106-a2b0-4d3dcf947b1d",
+      "name": "Qual Markedesk?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -1664,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\norder by \"id\";",
+        "options": {}
+      },
+      "id": "ac188376-4f0b-4b53-be8e-6e91cd48cb94",
+      "name": "Consulta contatos 6",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -1344,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "IcnFSt9B5hAmkJ6o",
+          "name": "Markedesk6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1152,
+        480
+      ],
+      "id": "ffc7c39d-a029-4551-935c-af98930eed75",
+      "name": "Respond to Webhook 6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\norder by \"id\";",
+        "options": {}
+      },
+      "id": "cd934751-28b7-4bcd-aaa6-c7bbd8d53b20",
+      "name": "Consulta contatos 5",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -1344,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "QDrJ1wghOVzzo0cx",
+          "name": "Markedesk5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1152,
+        304
+      ],
+      "id": "b666ea7d-1a25-43d0-9506-baa1c4ff9db3",
+      "name": "Respond to Webhook 5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\norder by \"id\";",
+        "options": {}
+      },
+      "id": "56f02abb-a535-4935-8dc7-0f6f23ef6b15",
+      "name": "Consulta contatos 4",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -1344,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "hXnyL2YZHhd3jelM",
+          "name": "Markedesk4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1152,
+        128
+      ],
+      "id": "9f899970-182d-4078-8fbd-a70cf0bfd9d6",
+      "name": "Respond to Webhook 4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\norder by \"id\";",
+        "options": {}
+      },
+      "id": "8eb704b0-12bc-483b-9d7f-ba1bb7a14344",
+      "name": "Consulta contatos 3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -1344,
+        -48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "deCeK2EGUvpttxGn",
+          "name": "markedesk3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1152,
+        -48
+      ],
+      "id": "f70aead3-ace1-4958-8555-2270cb5bebc2",
+      "name": "Respond to Webhook 3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\norder by \"id\";",
+        "options": {}
+      },
+      "id": "dcae0697-bb8e-4129-9dc4-e000429cab8d",
+      "name": "Consulta contatos 2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -1344,
+        -224
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "OpccfqfN6WG4HTSJ",
+          "name": "MarkeDesk2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1152,
+        -224
+      ],
+      "id": "d3de8e2b-e5d9-4dff-99b3-c466bc854ff1",
+      "name": "Respond to Webhook  2"
+    },
+    {
+      "parameters": {
+        "content": "# Consulta contatos",
+        "height": 928,
+        "width": 1008,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1952,
+        -272
+      ],
+      "id": "0eebe511-9bb6-4b90-98b5-7f7aac3919d5",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "59e9f170-f901-45db-8649-5a9fdf06293d",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1888,
+        128
+      ],
+      "id": "ffb8efed-935b-4227-8d30-5020851467fe",
+      "name": "Consulta Contatos",
+      "webhookId": "59e9f170-f901-45db-8649-5a9fdf06293d"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "18bd1e69-7bda-4e92-99cc-f6d232ed26dd",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -768,
+        112
+      ],
+      "id": "dd96a830-cf36-4af4-92fd-9f21a7135edd",
+      "name": "Processa Histórico",
+      "webhookId": "18bd1e69-7bda-4e92-99cc-f6d232ed26dd"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "binaryData": true,
+        "name": "={{ $json.fileName }}",
+        "parents": [
+          "1ZA2ixivRx19OgbInvJac4fAI3XJG0GZ7"
+        ],
+        "options": {}
+      },
+      "name": "Salva no Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [
+        944,
+        112
+      ],
+      "id": "9015596b-f1eb-4dec-a312-dc8175d0cf88",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "x8Usr3xPNd2qlwmI",
+          "name": "Google Drive - Eliana (Servertec)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "81fa801d-84b5-4dd2-8d08-3ee0b8b526ac"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "97e25690-68ef-4e1e-95fd-44820aafb61d",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "3",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "3"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "f3fd0620-e266-4814-b6bf-d566fba8ad89",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "4",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "4"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "3c94c8c7-b60b-4773-a883-bdfe2b39aa63",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "5",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "5"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "17b6d8d4-a79d-4675-9213-a9baa562b452",
+                    "leftValue": "={{ $json.body.markedesk }}",
+                    "rightValue": "6",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "6"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22d52888-240c-4f31-8871-f310f2291c0f",
+      "name": "Qual Markedesk?1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -528,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# Processa Histórico",
+        "height": 928,
+        "width": 1536,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -832,
+        -272
+      ],
+      "id": "e17fabb2-6c21-4318-83ff-d2a0543e2b73",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "# Gera Download",
+        "height": 336,
+        "width": 944,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        816,
+        0
+      ],
+      "id": "b70168e1-c3e3-440e-ac96-da00a5733560",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.\"Tickets\"\nwhere \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nand \"contactId\" = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "a1d05959-f54d-4124-b9c2-04d71305176b",
+      "name": "Localiza TicketId por contato 2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        -240
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "OpccfqfN6WG4HTSJ",
+          "name": "MarkeDesk2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"body\", \"createdAt\", \"fromMe\" FROM public.\"Messages\"\nWHERE \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nAND \"ticketId\" = {{ $json.id }}\nORDER BY \"createdAt\" ASC;",
+        "options": {}
+      },
+      "id": "5d5cb1df-7c4d-4257-a233-3351604d9dc8",
+      "name": "Localiza Chat (utilizando o TicketId) 2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        176,
+        -240
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "OpccfqfN6WG4HTSJ",
+          "name": "MarkeDesk2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\nand \"id\" = {{ $json.body.contatoId }};",
+        "options": {}
+      },
+      "id": "ef68499f-83d5-4bc9-ac36-a599cefbcb78",
+      "name": "Consulta contato 2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -208,
+        -240
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "OpccfqfN6WG4HTSJ",
+          "name": "MarkeDesk2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\nand \"id\" = {{ $json.body.contatoId }};",
+        "options": {}
+      },
+      "id": "7689bfe6-7f10-4a6a-b40b-535896d09ae1",
+      "name": "Consulta contato 3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -208,
+        -64
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "deCeK2EGUvpttxGn",
+          "name": "markedesk3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.\"Tickets\"\nwhere \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nand \"contactId\" = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "813aa0af-0d5d-4052-b135-1b5d91dc5dd9",
+      "name": "Localiza TicketId por contato 3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        -64
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "deCeK2EGUvpttxGn",
+          "name": "markedesk3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"body\", \"createdAt\", \"fromMe\" FROM public.\"Messages\"\nWHERE \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nAND \"ticketId\" = {{ $json.id }}\nORDER BY \"createdAt\" ASC;",
+        "options": {}
+      },
+      "id": "b1a2ddf0-f1d4-46d8-8bdb-e1167ed0f94c",
+      "name": "Localiza Chat (utilizando o TicketId) 3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        176,
+        -64
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "deCeK2EGUvpttxGn",
+          "name": "markedesk3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\nand \"id\" = {{ $json.body.contatoId }};",
+        "options": {}
+      },
+      "id": "835f0334-6394-4fd7-a38a-6b851320d0a9",
+      "name": "Consulta contato 4",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -208,
+        112
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "hXnyL2YZHhd3jelM",
+          "name": "Markedesk4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.\"Tickets\"\nwhere \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nand \"contactId\" = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "c33595b5-3d5d-40f6-bbb3-3ae8b21c3fd3",
+      "name": "Localiza TicketId por contato 4",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        112
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "hXnyL2YZHhd3jelM",
+          "name": "Markedesk4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"body\", \"createdAt\", \"fromMe\" FROM public.\"Messages\"\nWHERE \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nAND \"ticketId\" = {{ $json.id }}\nORDER BY \"createdAt\" ASC;",
+        "options": {}
+      },
+      "id": "2e8befb2-2861-4742-8870-1ecede32344c",
+      "name": "Localiza Chat (utilizando o TicketId) 4",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        176,
+        112
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "hXnyL2YZHhd3jelM",
+          "name": "Markedesk4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\nand \"id\" = {{ $json.body.contatoId }};",
+        "options": {}
+      },
+      "id": "69385a76-9ced-47d1-81c0-ab22cf3d97d3",
+      "name": "Consulta contato 5",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -208,
+        288
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "QDrJ1wghOVzzo0cx",
+          "name": "Markedesk5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.\"Tickets\"\nwhere \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nand \"contactId\" = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "a8bc9352-7753-44ad-92db-762bdec84f45",
+      "name": "Localiza TicketId por contato 5",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        288
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "QDrJ1wghOVzzo0cx",
+          "name": "Markedesk5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"body\", \"createdAt\", \"fromMe\" FROM public.\"Messages\"\nWHERE \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nAND \"ticketId\" = {{ $json.id }}\nORDER BY \"createdAt\" ASC;",
+        "options": {}
+      },
+      "id": "bc9be60d-b905-4696-83eb-919d37606716",
+      "name": "Localiza Chat (utilizando o TicketId) 5",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        176,
+        288
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "QDrJ1wghOVzzo0cx",
+          "name": "Markedesk5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \"id\", \"name\", \"number\" from public.\"Contacts\"\nwhere \"companyId\" = {{ $json.body.companyId }}\nand \"id\" = {{ $json.body.contatoId }};",
+        "options": {}
+      },
+      "id": "f740db00-9b96-4c7d-8a33-7cae9a1a7ae3",
+      "name": "Consulta contato 6",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -208,
+        464
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IcnFSt9B5hAmkJ6o",
+          "name": "Markedesk6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.\"Tickets\"\nwhere \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nand \"contactId\" = {{ $json.id }};",
+        "options": {}
+      },
+      "id": "d743a3cb-4fc4-43e5-b95c-e15fcd210640",
+      "name": "Localiza TicketId por contato 6",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        464
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IcnFSt9B5hAmkJ6o",
+          "name": "Markedesk6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"body\", \"createdAt\", \"fromMe\" FROM public.\"Messages\"\nWHERE \"companyId\" = {{ $('Processa Histórico').item.json.body.companyId }}\nAND \"ticketId\" = {{ $json.id }}\nORDER BY \"createdAt\" ASC;",
+        "options": {}
+      },
+      "id": "33c4dbe6-f91a-45b8-9b0a-39ae50a57035",
+      "name": "Localiza Chat (utilizando o TicketId) 6",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [
+        176,
+        464
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "IcnFSt9B5hAmkJ6o",
+          "name": "Markedesk6"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Monta conversa em HTML": {
+      "main": [
+        [
+          {
+            "node": "Salva no Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compartilhar arquivo": {
+      "main": [
+        [
+          {
+            "node": "Retornar URL Pública",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retornar URL Pública": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qual Markedesk?": {
+      "main": [
+        [
+          {
+            "node": "Consulta contatos 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contatos 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contatos 4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contatos 5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contatos 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contatos 6": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contatos 5": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contatos 4": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contatos 3": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contatos 2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook  2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta Contatos": {
+      "main": [
+        [
+          {
+            "node": "Qual Markedesk?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processa Histórico": {
+      "main": [
+        [
+          {
+            "node": "Qual Markedesk?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salva no Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Compartilhar arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qual Markedesk?1": {
+      "main": [
+        [
+          {
+            "node": "Consulta contato 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contato 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contato 4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contato 5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulta contato 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza TicketId por contato 2": {
+      "main": [
+        [
+          {
+            "node": "Localiza Chat (utilizando o TicketId) 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza Chat (utilizando o TicketId) 2": {
+      "main": [
+        [
+          {
+            "node": "Monta conversa em HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contato 2": {
+      "main": [
+        [
+          {
+            "node": "Localiza TicketId por contato 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contato 3": {
+      "main": [
+        [
+          {
+            "node": "Localiza TicketId por contato 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza TicketId por contato 3": {
+      "main": [
+        [
+          {
+            "node": "Localiza Chat (utilizando o TicketId) 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza Chat (utilizando o TicketId) 3": {
+      "main": [
+        [
+          {
+            "node": "Monta conversa em HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contato 4": {
+      "main": [
+        [
+          {
+            "node": "Localiza TicketId por contato 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza TicketId por contato 4": {
+      "main": [
+        [
+          {
+            "node": "Localiza Chat (utilizando o TicketId) 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza Chat (utilizando o TicketId) 4": {
+      "main": [
+        [
+          {
+            "node": "Monta conversa em HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contato 5": {
+      "main": [
+        [
+          {
+            "node": "Localiza TicketId por contato 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza TicketId por contato 5": {
+      "main": [
+        [
+          {
+            "node": "Localiza Chat (utilizando o TicketId) 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza Chat (utilizando o TicketId) 5": {
+      "main": [
+        [
+          {
+            "node": "Monta conversa em HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta contato 6": {
+      "main": [
+        [
+          {
+            "node": "Localiza TicketId por contato 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza TicketId por contato 6": {
+      "main": [
+        [
+          {
+            "node": "Localiza Chat (utilizando o TicketId) 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localiza Chat (utilizando o TicketId) 6": {
+      "main": [
+        [
+          {
+            "node": "Monta conversa em HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e49b1e2b-ee4a-4f7c-b8f7-7ed40b0ad056",
+  "meta": {
+    "instanceId": "179da479273d4c12a002f182b906c41d80167dc7eb52d857ab7804382dbf4368"
+  },
+  "id": "hOeDFAuZ4HVA85qu",
+  "tags": []
+}

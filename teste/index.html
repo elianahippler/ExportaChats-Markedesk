@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Consulta de Contatos</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="sidebar">
+    <h1>Consulta de Contatos</h1>
+    <form id="consultaForm">
+      <label for="markedesk">MarkeDesk:</label>
+      <input type="text" id="markedesk" name="markedesk" required>
+
+      <label for="companyId">ID da Empresa:</label>
+      <input type="number" id="companyId" name="companyId" required>
+
+      <button type="submit">Pesquisar Contatos</button>
+    </form>
+  </div>
+
+  <div class="content">
+    <h2 class="btnEscondido">Lista de Contatos</h2>
+
+    <div id="resultado">
+      <p>Nenhum contato carregado.</p>
+    </div>
+    
+    <div id="loader" class="loader-overlay" style="display: none;">
+      <div class="loader-content">
+        <div class="tenor-gif-embed" data-postid="26545612" data-share-method="host" data-aspect-ratio="1" data-width="160px"></div>
+        <div class="loader-text">Carregando contatos...</div>
+      </div>
+    </div>
+
+    <script type="text/javascript" async src="https://tenor.com/embed.js"></script>
+    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
